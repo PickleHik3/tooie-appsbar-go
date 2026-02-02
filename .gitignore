@@ -1,0 +1,17 @@
+# Ignore the specific binary name
+tooie-appsbar-go
+
+# Ignore Windows executables (if you cross-compile)
+*.exe
+*.dll
+
+# Ignore MacOS/Linux binaries
+*.so
+*.dylib
+
+# Ignore local environment variables (Keep your API keys safe!)
+.env
+
+# Optional: Ignore IDE settings
+.vscode/
+.idea/
