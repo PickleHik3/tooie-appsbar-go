@@ -48,6 +48,7 @@ apps:
 | `apps[].icon` | Path to icon image (PNG, JPG, GIF) |
 | `apps[].package` | Android package name |
 | `apps[].activity` | Optional: specific activity to launch |
+| `behavior.close_on_launch` | Exit after launching an app (default: false) |
 
 ## Usage
 
@@ -61,3 +62,7 @@ apps:
 ## Version
 
 0.1
+
+## Roadmap
+
+- [ ] Fixed icon size option (override auto-scaling)

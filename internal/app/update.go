@@ -68,6 +68,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ErrorFlash[msg.Index] = true
 				return m, clearErrorAfter(500*time.Millisecond, msg.Index)
 			}
+		} else if m.Config.Behavior.CloseOnLaunch {
+			return m, tea.Quit
 		}
 
 	case clearSelectionMsg:

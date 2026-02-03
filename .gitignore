@@ -1,4 +1,5 @@
 # Ignore the specific binary name
+tooie-appsbar
 tooie-appsbar-go
 
 # Ignore Windows executables (if you cross-compile)
