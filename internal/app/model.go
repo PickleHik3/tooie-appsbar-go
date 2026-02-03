@@ -10,10 +10,11 @@ import (
 
 // Model represents the application state.
 type Model struct {
-	Config     config.Config
-	TermWidth  int         // Terminal columns
-	TermHeight int         // Terminal rows
-	CellPx     sys.CellDim // Pixel dimensions per cell
+	Config      config.Config
+	DisplayApps []config.AppConfig // Apps in display order
+	TermWidth   int                // Terminal columns
+	TermHeight  int                // Terminal rows
+	CellPx      sys.CellDim        // Pixel dimensions per cell
 
 	Icons      []image.Image                  // Original high-res images
 	SixelCache map[string]graphics.SixelResult // Cached sixel data with dimensions
@@ -21,7 +22,8 @@ type Model struct {
 	ErrorFlash []bool // Per-app error indicator
 	Selected   int    // Currently selected app index (-1 for none)
 
-	Ready bool // Terminal geometry acquired
+	Ready           bool // Terminal geometry acquired
+	NeedsFullRedraw bool // When true, redraw icons; when false, only redraw borders
 }
 
 // launchResultMsg carries the result of an app launch attempt.
@@ -32,15 +34,18 @@ type launchResultMsg struct {
 
 // NewModel creates a new launcher model.
 func NewModel(cfg config.Config) Model {
-	numApps := len(cfg.Apps)
+	displayApps := cfg.GetDisplayApps()
+	numApps := len(displayApps)
 
 	return Model{
-		Config:     cfg,
-		Icons:      make([]image.Image, numApps),
-		SixelCache: make(map[string]graphics.SixelResult),
-		ErrorFlash: make([]bool, numApps),
-		Selected:   -1,
-		Ready:      false,
+		Config:          cfg,
+		DisplayApps:     displayApps,
+		Icons:           make([]image.Image, numApps),
+		SixelCache:      make(map[string]graphics.SixelResult),
+		ErrorFlash:      make([]bool, numApps),
+		Selected:        -1,
+		Ready:           false,
+		NeedsFullRedraw: true,
 	}
 }
 
@@ -106,9 +111,17 @@ func (m *Model) HitTest(x, y int) int {
 	}
 
 	index := row*m.Config.Grid.Columns + col
-	if index >= len(m.Config.Apps) {
+	if index >= len(m.DisplayApps) {
 		return -1
 	}
 
 	return index
+}
+
+// GetIconScale returns the icon scale for the app at the given display index.
+func (m *Model) GetIconScale(index int) float64 {
+	if index < 0 || index >= len(m.DisplayApps) {
+		return 1.0
+	}
+	return m.Config.GetIconScale(m.DisplayApps[index])
 }

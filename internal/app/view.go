@@ -24,7 +24,7 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
-	if len(m.Config.Apps) == 0 {
+	if len(m.DisplayApps) == 0 {
 		return "No apps configured. Edit ~/.config/tooie-appsbar-go/config.yaml"
 	}
 
@@ -72,7 +72,7 @@ func (m Model) View() string {
 
 		for col := 0; col < m.Config.Grid.Columns; col++ {
 			var cell string
-			if appIndex < len(m.Config.Apps) {
+			if appIndex < len(m.DisplayApps) {
 				cell = m.renderCellFrame(appIndex, innerW, innerH)
 				appIndex++
 			} else {
@@ -86,13 +86,24 @@ func (m Model) View() string {
 
 	b.WriteString(lipgloss.JoinVertical(lipgloss.Left, rows...))
 
-	// Second pass: overlay sixel images at absolute positions (only if loaded)
+	// Second pass: overlay sixel images at absolute positions
 	if iconsLoaded {
 		appIndex = 0
-		for row := 0; row < m.Config.Grid.Rows && appIndex < len(m.Config.Apps); row++ {
-			for col := 0; col < m.Config.Grid.Columns && appIndex < len(m.Config.Apps); col++ {
+		for row := 0; row < m.Config.Grid.Rows && appIndex < len(m.DisplayApps); row++ {
+			for col := 0; col < m.Config.Grid.Columns && appIndex < len(m.DisplayApps); col++ {
 				if appIndex < len(m.Icons) && m.Icons[appIndex] != nil {
-					sixelResult := m.getSixelContentWithDimensions(appIndex, iconW, iconH)
+					// Apply icon scale
+					scale := m.GetIconScale(appIndex)
+					scaledIconW := int(float64(iconW) * scale)
+					scaledIconH := int(float64(iconH) * scale)
+					if scaledIconW < 1 {
+						scaledIconW = 1
+					}
+					if scaledIconH < 1 {
+						scaledIconH = 1
+					}
+
+					sixelResult := m.getSixelContentWithDimensions(appIndex, scaledIconW, scaledIconH, scale)
 					if sixelResult.Sixel != "" {
 						// Calculate absolute position for this icon
 						borderOffset := 0
@@ -176,8 +187,8 @@ func (m *Model) renderEmptyCell(innerW, innerH int) string {
 }
 
 // getSixelContentWithDimensions retrieves cached sixel with dimensions or generates new.
-func (m *Model) getSixelContentWithDimensions(index, widthCells, heightCells int) graphics.SixelResult {
-	key := fmt.Sprintf("%d_%d_%d", index, widthCells, heightCells)
+func (m *Model) getSixelContentWithDimensions(index, widthCells, heightCells int, scale float64) graphics.SixelResult {
+	key := fmt.Sprintf("%d_%d_%d_%.2f", index, widthCells, heightCells, scale)
 
 	if cached, ok := m.SixelCache[key]; ok {
 		return cached

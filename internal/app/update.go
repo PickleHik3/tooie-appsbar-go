@@ -1,8 +1,9 @@
 package app
 
 import (
+	"fmt"
 	"image"
-	"time"
+	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -11,17 +12,11 @@ import (
 	"tooie-appsbar-go/internal/sys"
 )
 
-// clearSelectionMsg clears the selection highlight after a delay.
-type clearSelectionMsg struct{ index int }
-
-// clearErrorMsg clears the error flash after a delay.
-type clearErrorMsg struct{ index int }
-
 // Init initializes the model.
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		queryTerminal,
-		loadIcons(m.Config),
+		loadIcons(m.DisplayApps),
 	)
 }
 
@@ -35,10 +30,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.WindowSizeMsg:
-		m.TermWidth = msg.Width
-		m.TermHeight = msg.Height
-		m.ClearCache()
-		return m, tea.Batch(tea.ClearScreen, queryTerminal)
+		// Only set dimensions on first receive, ignore resizes (e.g., soft keyboard)
+		if m.TermWidth == 0 && m.TermHeight == 0 {
+			m.TermWidth = msg.Width
+			m.TermHeight = msg.Height
+			return m, queryTerminal
+		}
+		// Ignore subsequent resize events to prevent redraws
+		return m, nil
 
 	case terminalGeometryMsg:
 		m.CellPx = msg.CellDim
@@ -50,37 +49,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Icons = msg.Icons
 
 	case tea.MouseMsg:
-		if msg.Action == tea.MouseActionRelease {
-			index := m.HitTest(msg.X, msg.Y)
-			if index >= 0 && index < len(m.Config.Apps) {
-				m.Selected = index
-				return m, tea.Batch(
-					launchApp(index, m.Config.Apps[index]),
-					clearSelectionAfter(300*time.Millisecond, index),
-				)
+		// Only handle release events, ignore press/motion to avoid extra redraws
+		if msg.Action != tea.MouseActionRelease {
+			return m, nil
+		}
+		index := m.HitTest(msg.X, msg.Y)
+		if index >= 0 && index < len(m.DisplayApps) {
+			// Flash visual feedback directly via ANSI (no View() redraw)
+			m.flashCell(index)
+
+			// Launch app
+			go sys.LaunchApp(m.DisplayApps[index].Package, m.DisplayApps[index].Activity)
+
+			if m.Config.Behavior.CloseOnLaunch {
+				return m, tea.Quit
 			}
 		}
-
-	case launchResultMsg:
-		if msg.Err != nil {
-			// Show error flash
-			if msg.Index >= 0 && msg.Index < len(m.ErrorFlash) {
-				m.ErrorFlash[msg.Index] = true
-				return m, clearErrorAfter(500*time.Millisecond, msg.Index)
-			}
-		} else if m.Config.Behavior.CloseOnLaunch {
-			return m, tea.Quit
-		}
-
-	case clearSelectionMsg:
-		if m.Selected == msg.index {
-			m.Selected = -1
-		}
-
-	case clearErrorMsg:
-		if msg.index >= 0 && msg.index < len(m.ErrorFlash) {
-			m.ErrorFlash[msg.index] = false
-		}
+		return m, nil
 	}
 
 	return m, nil
@@ -108,11 +93,11 @@ func queryTerminal() tea.Msg {
 	return terminalGeometryMsg{CellDim: geom.CellDim}
 }
 
-// loadIcons loads all icon images.
-func loadIcons(cfg config.Config) tea.Cmd {
+// loadIcons loads all icon images for the display apps.
+func loadIcons(apps []config.AppConfig) tea.Cmd {
 	return func() tea.Msg {
-		icons := make([]image.Image, len(cfg.Apps))
-		for i, app := range cfg.Apps {
+		icons := make([]image.Image, len(apps))
+		for i, app := range apps {
 			if app.Icon != "" {
 				img, err := graphics.LoadImage(app.Icon)
 				if err == nil {
@@ -128,24 +113,62 @@ func loadIcons(cfg config.Config) tea.Cmd {
 	}
 }
 
-// clearSelectionAfter returns a command that clears selection after a delay.
-func clearSelectionAfter(d time.Duration, index int) tea.Cmd {
-	return tea.Tick(d, func(time.Time) tea.Msg {
-		return clearSelectionMsg{index}
-	})
-}
-
-// clearErrorAfter returns a command that clears error flash after a delay.
-func clearErrorAfter(d time.Duration, index int) tea.Cmd {
-	return tea.Tick(d, func(time.Time) tea.Msg {
-		return clearErrorMsg{index}
-	})
-}
-
-// launchApp launches an Android app.
-func launchApp(index int, app config.AppConfig) tea.Cmd {
-	return func() tea.Msg {
-		err := sys.LaunchApp(app.Package, app.Activity)
-		return launchResultMsg{Index: index, Err: err}
+// flashCell provides visual feedback by briefly highlighting the cell border.
+// Uses direct ANSI output to avoid triggering a full View() redraw.
+func (m *Model) flashCell(index int) {
+	if !m.Config.Style.Border {
+		return
 	}
+
+	cellW, cellH := m.GridCellSize()
+	if cellW <= 0 || cellH <= 0 {
+		return
+	}
+
+	col := index % m.Config.Grid.Columns
+	row := index / m.Config.Grid.Columns
+
+	// Calculate top-left position of the cell (1-indexed for ANSI)
+	startX := col*cellW + 1
+	startY := row*cellH + 1
+
+	// Highlight color (bright cyan)
+	highlight := "\x1b[96m" // Bright cyan
+	reset := "\x1b[0m"
+
+	// Rounded border characters
+	topLeft := "╭"
+	topRight := "╮"
+	bottomLeft := "╰"
+	bottomRight := "╯"
+	horizontal := "─"
+	vertical := "│"
+
+	var output string
+
+	// Top border
+	output += fmt.Sprintf("\x1b[%d;%dH%s%s", startY, startX, highlight, topLeft)
+	for x := 1; x < cellW-1; x++ {
+		output += horizontal
+	}
+	output += topRight
+
+	// Side borders
+	for y := 1; y < cellH-1; y++ {
+		output += fmt.Sprintf("\x1b[%d;%dH%s", startY+y, startX, vertical)
+		output += fmt.Sprintf("\x1b[%d;%dH%s", startY+y, startX+cellW-1, vertical)
+	}
+
+	// Bottom border
+	output += fmt.Sprintf("\x1b[%d;%dH%s", startY+cellH-1, startX, bottomLeft)
+	for x := 1; x < cellW-1; x++ {
+		output += horizontal
+	}
+	output += bottomRight + reset
+
+	// Move cursor to bottom
+	output += fmt.Sprintf("\x1b[%d;1H", m.TermHeight)
+
+	// Write directly to stdout
+	fmt.Fprint(os.Stdout, output)
 }

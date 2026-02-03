@@ -2,6 +2,7 @@ package config
 
 // Config represents the launcher configuration.
 type Config struct {
+	Display  []string       `yaml:"display,omitempty"`  // App names in display order (if empty, show all)
 	Grid     GridConfig     `yaml:"grid"`
 	Style    StyleConfig    `yaml:"style"`
 	Behavior BehaviorConfig `yaml:"behavior"`
@@ -21,28 +22,76 @@ type GridConfig struct {
 
 // StyleConfig defines visual styling options.
 type StyleConfig struct {
-	Border  bool `yaml:"border"`
-	Padding int  `yaml:"padding"`
+	Border    bool    `yaml:"border"`
+	Padding   int     `yaml:"padding"`
+	IconScale float64 `yaml:"icon_scale,omitempty"` // Global icon scale (0.1-1.0), default 1.0
 }
 
 // AppConfig defines a single app entry.
 type AppConfig struct {
-	Name     string `yaml:"name"`
-	Icon     string `yaml:"icon"`
-	Package  string `yaml:"package"`
-	Activity string `yaml:"activity,omitempty"`
+	Name      string  `yaml:"name"`
+	Icon      string  `yaml:"icon"`
+	Package   string  `yaml:"package"`
+	Activity  string  `yaml:"activity,omitempty"`
+	IconScale float64 `yaml:"icon_scale,omitempty"` // Per-app override (0.1-1.0)
+}
+
+// GetIconScale returns the effective icon scale for an app (per-app or global).
+func (c *Config) GetIconScale(app AppConfig) float64 {
+	if app.IconScale > 0 {
+		return clampScale(app.IconScale)
+	}
+	if c.Style.IconScale > 0 {
+		return clampScale(c.Style.IconScale)
+	}
+	return 1.0
+}
+
+// GetDisplayApps returns apps in display order. If Display is empty, returns all apps.
+func (c *Config) GetDisplayApps() []AppConfig {
+	if len(c.Display) == 0 {
+		return c.Apps
+	}
+
+	// Build a map of apps by name
+	appMap := make(map[string]AppConfig)
+	for _, app := range c.Apps {
+		appMap[app.Name] = app
+	}
+
+	// Return apps in display order
+	var result []AppConfig
+	for _, name := range c.Display {
+		if app, ok := appMap[name]; ok {
+			result = append(result, app)
+		}
+	}
+	return result
+}
+
+// clampScale ensures scale is within valid range.
+func clampScale(s float64) float64 {
+	if s < 0.1 {
+		return 0.1
+	}
+	if s > 1.0 {
+		return 1.0
+	}
+	return s
 }
 
 // DefaultConfig returns a sensible default configuration.
 func DefaultConfig() Config {
 	return Config{
+		Display: []string{},
 		Grid: GridConfig{
 			Rows:    1,
 			Columns: 5,
 		},
 		Style: StyleConfig{
-			Border:  true,
-			Padding: 1,
+			Border:    true,
+			Padding:   1,
+			IconScale: 1.0,
 		},
 		Behavior: BehaviorConfig{
 			CloseOnLaunch: false,
