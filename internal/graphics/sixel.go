@@ -2,6 +2,8 @@ package graphics
 
 import (
 	"bytes"
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"image"
 	"image/png"
@@ -9,6 +11,7 @@ import (
 	_ "image/jpeg"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/mattn/go-sixel"
 
@@ -112,12 +115,20 @@ func FetchDashboardIcon(iconName string) (image.Image, error) {
 	return FetchIconFromURL(url)
 }
 
-// FetchIconFromURL downloads an icon from a URL.
+// FetchIconFromURL downloads an icon from a URL with local caching.
+// Cached icons are stored in ~/.config/tooie-shelf/icons/ with a hash of the URL as filename.
 func FetchIconFromURL(url string) (image.Image, error) {
 	if url == "" {
 		return nil, fmt.Errorf("empty URL")
 	}
 
+	// Check local cache first
+	cachePath := getURLIconCachePath(url)
+	if cached, err := LoadImage(cachePath); err == nil {
+		return cached, nil
+	}
+
+	// Download from URL
 	cmd := exec.Command("curl", "-sL", "--max-time", "10", url)
 	output, err := cmd.Output()
 	if err != nil {
@@ -129,5 +140,19 @@ func FetchIconFromURL(url string) (image.Image, error) {
 		return nil, fmt.Errorf("failed to decode icon: %w", err)
 	}
 
+	// Save to cache
+	_ = os.MkdirAll(filepath.Dir(cachePath), 0755)
+	_ = SaveImage(img, cachePath)
+
 	return img, nil
+}
+
+// getURLIconCachePath returns the cache path for a URL-based icon.
+// Uses MD5 hash of URL to create a unique filename.
+func getURLIconCachePath(url string) string {
+	hash := md5.Sum([]byte(url))
+	hashStr := hex.EncodeToString(hash[:])
+
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "tooie-shelf", "icons", "url_"+hashStr+".png")
 }
