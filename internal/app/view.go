@@ -39,6 +39,9 @@ func (m Model) View() string {
 	b.WriteString(hideCursor)
 	b.WriteString(cursorHome)
 
+	// Calculate top row height (clock area)
+	topHeight := m.TopRowHeight()
+
 	// Calculate inner dimensions for lipgloss (accounting for border)
 	innerW := cellW
 	innerH := cellH
@@ -55,18 +58,38 @@ func (m Model) View() string {
 
 	// First pass: render all borders/frames
 	var rows []string
-	appIndex := 0
 
+	// Render top row (clock area) - takes all remaining space
+	if topHeight > 0 {
+		topCell := m.renderTopCell(m.TermWidth, topHeight)
+		rows = append(rows, topCell)
+	}
+
+	// Calculate total grid width and remainder to distribute
+	totalGridWidth := cellW * m.Config.Grid.Columns
+	remainder := m.TermWidth - totalGridWidth
+
+	// Distribute remainder evenly: each of the first 'remainder' columns gets +1 width
+	// This makes all cells uniform while spanning full terminal width
+
+	// Render icon grid at the bottom
+	appIndex := 0
 	for row := 0; row < m.Config.Grid.Rows; row++ {
 		var cells []string
 
 		for col := 0; col < m.Config.Grid.Columns; col++ {
+			// Distribute remainder across first 'remainder' columns
+			colInnerW := innerW
+			if col < remainder {
+				colInnerW += 1
+			}
+
 			var cell string
 			if appIndex < len(m.DisplayApps) {
-				cell = m.renderCellFrame(appIndex, innerW, innerH)
+				cell = m.renderCellFrame(appIndex, colInnerW, innerH)
 				appIndex++
 			} else {
-				cell = m.renderEmptyCell(innerW, innerH)
+				cell = m.renderEmptyCell(colInnerW, innerH)
 			}
 			cells = append(cells, cell)
 		}
@@ -112,6 +135,15 @@ func (m *Model) drawSixelsDirectly(b *strings.Builder) {
 		return
 	}
 
+	// Get border size for calculations
+	borderSize := 0
+	if m.Config.Style.Border {
+		borderSize = 2
+	}
+
+	// Get top row offset for positioning icons
+	topHeight := m.TopRowHeight()
+
 	appIndex := 0
 	for row := 0; row < m.Config.Grid.Rows && appIndex < len(m.DisplayApps); row++ {
 		for col := 0; col < m.Config.Grid.Columns && appIndex < len(m.DisplayApps); col++ {
@@ -136,16 +168,24 @@ func (m *Model) drawSixelsDirectly(b *strings.Builder) {
 					}
 					padOffset := m.Config.Style.Padding
 
+					// Get actual cell width for this column for proper centering
+					actualCellW := m.GetCellWidthForColumn(col)
+					actualIconW := actualCellW - 2*padOffset - borderSize
+					if actualIconW < 1 {
+						actualIconW = 1
+					}
+
 					// Calculate centering offset based on actual sixel pixel dimensions
 					sixelWidthCells := sixelResult.Width / m.CellPx.Width
 					sixelHeightCells := sixelResult.Height / m.CellPx.Height
-					centerOffsetX := (iconW - sixelWidthCells) / 2
+					centerOffsetX := (actualIconW - sixelWidthCells) / 2
 					centerOffsetY := (iconH - sixelHeightCells) / 2
 
-					// Position: centered within the icon area
+					// Position: centered within the icon area, offset by top row height
+					// X position uses GetCellXPosition to account for varying column widths
 					// +1 because terminal positions are 1-indexed
-					posX := col*cellW + borderOffset + padOffset + centerOffsetX + 1
-					posY := row*cellH + borderOffset + padOffset + centerOffsetY + 1
+					posX := m.GetCellXPosition(col) + borderOffset + padOffset + centerOffsetX + 1
+					posY := topHeight + row*cellH + borderOffset + padOffset + centerOffsetY + 1
 
 					if posX < 1 {
 						posX = 1
@@ -194,6 +234,35 @@ func (m *Model) renderCellFrame(index, innerW, innerH int) string {
 
 // renderEmptyCell renders an empty placeholder cell.
 func (m *Model) renderEmptyCell(innerW, innerH int) string {
+	style := lipgloss.NewStyle().
+		Width(innerW).
+		Height(innerH)
+
+	if m.Config.Style.Border {
+		style = style.
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color(m.Config.GetBorderColor()))
+	}
+
+	return style.Render("")
+}
+
+// renderTopCell renders the top row cell (clock area).
+func (m *Model) renderTopCell(width, height int) string {
+	// Account for borders if enabled
+	innerW := width
+	innerH := height
+	if m.Config.Style.Border {
+		innerW = width - 2
+		innerH = height - 2
+	}
+	if innerW < 1 {
+		innerW = 1
+	}
+	if innerH < 1 {
+		innerH = 1
+	}
+
 	style := lipgloss.NewStyle().
 		Width(innerW).
 		Height(innerH)

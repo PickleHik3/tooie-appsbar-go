@@ -61,14 +61,48 @@ func (m *Model) ClearCache() {
 	m.SixelCache = make(map[string]graphics.SixelResult)
 }
 
+// TopRowHeight returns the height of the top row (clock area) in terminal cells.
+// This takes all remaining space above the icon grid.
+func (m *Model) TopRowHeight() int {
+	_, iconGridHeight := m.IconGridDimensions()
+	if iconGridHeight >= m.TermHeight-1 {
+		return 0
+	}
+	return m.TermHeight - iconGridHeight
+}
+
+// IconGridDimensions calculates the total dimensions of the icon grid area.
+// The grid is constrained to the bottom of the terminal with visually square cells.
+func (m *Model) IconGridDimensions() (width, height int) {
+	if m.Config.Grid.Columns <= 0 || m.Config.Grid.Rows <= 0 {
+		return 0, 0
+	}
+	// Width spans full terminal width
+	width = m.TermWidth
+	// Height is based on cell height * number of rows
+	_, cellHeight := m.GridCellSize()
+	height = cellHeight * m.Config.Grid.Rows
+	// Ensure we don't exceed terminal height
+	if height > m.TermHeight-1 {
+		height = m.TermHeight - 1
+	}
+	return
+}
+
 // GridCellSize calculates the size of each grid cell in terminal cells.
+// Cells are sized to appear square visually (accounting for terminal cell aspect ratio).
 func (m *Model) GridCellSize() (width, height int) {
 	if m.Config.Grid.Columns <= 0 || m.Config.Grid.Rows <= 0 {
 		return 0, 0
 	}
+	// Width based on terminal width divided by columns
 	width = m.TermWidth / m.Config.Grid.Columns
-	// Use TermHeight - 1 to avoid bottom border being cut off
-	height = (m.TermHeight - 1) / m.Config.Grid.Rows
+	// Height: terminal cells are typically ~2x as tall as they are wide,
+	// so we use half the width to make cells appear visually square
+	height = width / 2
+	if height < 1 {
+		height = 1
+	}
 	return
 }
 
@@ -102,8 +136,17 @@ func (m *Model) HitTest(x, y int) int {
 		return -1
 	}
 
+	// Account for top row offset
+	topHeight := m.TopRowHeight()
+	if y < topHeight {
+		return -1 // Click in top row area
+	}
+
+	// Adjust y to be relative to the icon grid
+	adjustedY := y - topHeight
+
 	col := x / cellW
-	row := y / cellH
+	row := adjustedY / cellH
 
 	if col < 0 || col >= m.Config.Grid.Columns {
 		return -1
@@ -126,4 +169,32 @@ func (m *Model) GetIconScale(index int) float64 {
 		return 1.0
 	}
 	return m.Config.GetIconScale(m.DisplayApps[index])
+}
+
+// GetCellWidthForColumn returns the cell width for a specific column.
+// Remainder is distributed: first 'remainder' columns get +1 width.
+func (m *Model) GetCellWidthForColumn(col int) int {
+	cellW, _ := m.GridCellSize()
+	totalBaseWidth := cellW * m.Config.Grid.Columns
+	remainder := m.TermWidth - totalBaseWidth
+	if col < remainder {
+		return cellW + 1
+	}
+	return cellW
+}
+
+// GetCellXPosition returns the starting X position (0-indexed) for a given column.
+// Accounts for varying column widths when remainder is distributed.
+func (m *Model) GetCellXPosition(col int) int {
+	cellW, _ := m.GridCellSize()
+	totalBaseWidth := cellW * m.Config.Grid.Columns
+	remainder := m.TermWidth - totalBaseWidth
+
+	// First 'remainder' columns are 1 wider
+	if col <= remainder {
+		// All columns up to this one have the extra width
+		return col * (cellW + 1)
+	}
+	// First 'remainder' columns are wide, rest are base width
+	return remainder*(cellW+1) + (col-remainder)*cellW
 }

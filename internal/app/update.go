@@ -206,9 +206,16 @@ func (m *Model) flashCell(index int) {
 	col := index % m.Config.Grid.Columns
 	row := index / m.Config.Grid.Columns
 
+	// Get actual cell width for this column (last column may be wider)
+	actualCellW := m.GetCellWidthForColumn(col)
+
+	// Account for top row offset
+	topHeight := m.TopRowHeight()
+
 	// Calculate top-left position of the cell (1-indexed for ANSI)
-	startX := col*cellW + 1
-	startY := row*cellH + 1
+	// X position accounts for varying column widths
+	startX := m.GetCellXPosition(col) + 1
+	startY := topHeight + row*cellH + 1
 
 	// Get highlight color from config
 	highlightColor := m.Config.GetHighlightColor()
@@ -227,7 +234,7 @@ func (m *Model) flashCell(index int) {
 
 	// Top border
 	output += fmt.Sprintf("\x1b[%d;%dH%s%s", startY, startX, highlight, topLeft)
-	for x := 1; x < cellW-1; x++ {
+	for x := 1; x < actualCellW-1; x++ {
 		output += horizontal
 	}
 	output += topRight
@@ -235,12 +242,12 @@ func (m *Model) flashCell(index int) {
 	// Side borders
 	for y := 1; y < cellH-1; y++ {
 		output += fmt.Sprintf("\x1b[%d;%dH%s", startY+y, startX, vertical)
-		output += fmt.Sprintf("\x1b[%d;%dH%s", startY+y, startX+cellW-1, vertical)
+		output += fmt.Sprintf("\x1b[%d;%dH%s", startY+y, startX+actualCellW-1, vertical)
 	}
 
 	// Bottom border
 	output += fmt.Sprintf("\x1b[%d;%dH%s", startY+cellH-1, startX, bottomLeft)
-	for x := 1; x < cellW-1; x++ {
+	for x := 1; x < actualCellW-1; x++ {
 		output += horizontal
 	}
 	output += bottomRight + reset
@@ -272,8 +279,15 @@ func (m *Model) drawNormalBorder(index int) {
 	col := index % m.Config.Grid.Columns
 	row := index / m.Config.Grid.Columns
 
-	startX := col*cellW + 1
-	startY := row*cellH + 1
+	// Get actual cell width for this column (last column may be wider)
+	actualCellW := m.GetCellWidthForColumn(col)
+
+	// Account for top row offset
+	topHeight := m.TopRowHeight()
+
+	// X position accounts for varying column widths
+	startX := m.GetCellXPosition(col) + 1
+	startY := topHeight + row*cellH + 1
 
 	// Get normal border color from config
 	borderColor := m.Config.GetBorderColor()
@@ -291,7 +305,7 @@ func (m *Model) drawNormalBorder(index int) {
 
 	// Top border
 	output += fmt.Sprintf("\x1b[%d;%dH%s%s", startY, startX, color, topLeft)
-	for x := 1; x < cellW-1; x++ {
+	for x := 1; x < actualCellW-1; x++ {
 		output += horizontal
 	}
 	output += topRight
@@ -299,12 +313,12 @@ func (m *Model) drawNormalBorder(index int) {
 	// Side borders
 	for y := 1; y < cellH-1; y++ {
 		output += fmt.Sprintf("\x1b[%d;%dH%s", startY+y, startX, vertical)
-		output += fmt.Sprintf("\x1b[%d;%dH%s", startY+y, startX+cellW-1, vertical)
+		output += fmt.Sprintf("\x1b[%d;%dH%s", startY+y, startX+actualCellW-1, vertical)
 	}
 
 	// Bottom border
 	output += fmt.Sprintf("\x1b[%d;%dH%s", startY+cellH-1, startX, bottomLeft)
-	for x := 1; x < cellW-1; x++ {
+	for x := 1; x < actualCellW-1; x++ {
 		output += horizontal
 	}
 	output += bottomRight + reset
